@@ -1,0 +1,148 @@
+---
+title: "Milestone Report"
+output: html_document
+---
+
+This milestone report provides a summary of the data processing and descriptive statistics steps for the Capstone project. In addition, strategies about modeling and predictions will also be discussed.
+
+```{r preparation, message=FALSE, warning=FALSE}
+library(tm)
+library(RWeka)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)  # version 0.3 required
+
+```
+
+### Data Loading & Preprocessing
+
+Following instructions in [Task 0](https://class.coursera.org/dsscapstone-002/wiki/Task_0), the Capstone dataset was downloaded from Coursera website. The raw data is a zip file named "Coursera-SwiftKey.zip". After unzipping the file, a collection of text files were obtained. The files contains text materials in English, German, French and Russian. For this project, our focus is on the English documents only. 
+
+In this milestone report, we will use the "en_US.news.txt" file as an example and randomly choose 5% data to demonstrate basic data preprocessing and statistical analysis. The full dataset will be used in the final report.
+
+
+```{r load_data}
+f <- file("../../DSCapstoneProject_Data/Data/final/en_US/en_US.news.txt", "rb")
+en_us.news <- readLines(f)
+close(f)
+
+set.seed(123)
+news <- sample(en_us.news, length(en_us.news)*0.05)
+
+record.length <- data.frame(character=nchar(news), word=sapply(strsplit(news, " "), length))
+```
+
+The basic procedure for data preprocessing was adapted from "Hands-On Data Science with R - Text Mining" by Graham Williams.^[\tiny http://handsondatascience.com/TextMiningO.pdf (accessed on 11/16/2014)] It containes the following main steps:
+
+1. Construct corpus (a collection of texts) from the input file.
+2. Clean-up the corpus by removing special characters, punctuation, numbers etc.
+3. Build Document Term Matrix (term frequency table) using single word and n-grams.
+
+One major issue, as discussed extensively in the forum, is the performance of the tm package, which makes any exploratory activity painfully long if not impossible. we plan to resort to the Microsoft Azure Machine Learning platform which is currently available for free.^[\tiny http://azure.microsoft.com/en-us/services/machine-learning (accessed on 11/16/2014)]
+
+
+```{r data_preprocessing}
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+corpus.preprocess <- function(corpus){
+  # Helper function to preprocess corpus
+  processed.corpus <- corpus %>%
+    tm_map(toSpace, "/|@|\\|") %>%
+    tm_map(content_transformer(tolower)) %>%
+    tm_map(removeNumbers) %>%
+    tm_map(removePunctuation) %>%
+    tm_map(removeWords, stopwords("english")) %>%
+    tm_map(stripWhitespace)
+  return(processed.corpus)
+}
+
+news.corpus <- VCorpus(VectorSource(news)) %>% corpus.preprocess()
+
+news.dtm <- DocumentTermMatrix(news.corpus) %>% removeSparseTerms(0.99)
+
+BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+news.dtm.2g <- DocumentTermMatrix(news.corpus, control=list(tokenize = BigramTokenizer)) %>% removeSparseTerms(0.9999)
+
+TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+news.dtm.3g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TrigramTokenizer)) %>% removeSparseTerms(0.9999)
+
+```
+
+
+### Descriptive Analysis
+
+The US News dataset contains `r length(news)` records (5% of the total records). The length of records varies ranging from `r min(record.length$character)` to `r max(record.length$character)` characters, or from `r min(record.length$word)` words to `r max(record.length$word)` words. Their distributions are shown below:
+
+```{r record_length}
+p1 <- ggplot(record.length, aes(x=character)) +
+  geom_bar(stat="bin", binwidth=5) +
+  theme_bw() +
+  ggtitle("Record Length by Character")
+
+p2 <- ggplot(record.length, aes(x=word)) +
+  geom_bar(stat="bin", binwidth=5) +
+  theme_bw() +
+  ggtitle("Record Length by Word")
+
+grid.arrange(p1, p2, ncol=2)
+
+```
+
+The following plot shows the top 10 most frequent words in this dataset. It is clearly that all of the terms are fairly generic.
+
+```{r term_frequency}
+# Helper function to find the most frequent n words
+most.freq <- function(dtm, n=10){
+  freq <- colSums(as.matrix(dtm))
+  result <- freq[order(freq, decreasing=TRUE)][1:n]
+  return(data_frame(term=names(result), count=result))
+}
+
+ggplot(most.freq(news.dtm), aes(x=reorder(term, -count), y=count)) +
+  geom_bar(stat="identity") +
+  theme_bw() +
+  theme(axis.title.x = element_blank()) +
+  ggtitle("Most frequent words in news")
+
+```
+
+The following plot shows the top 10 most frequent 2-gram in this dataset. Again, they are very common phrases in news articles.
+
+```{r 2gram_frequency}
+ggplot(most.freq(news.dtm.2g), aes(x=reorder(term, -count), y=count)) +
+  geom_bar(stat="identity") +
+  theme_bw() +
+  theme(axis.title.x = element_blank(),
+           axis.text.x  = element_text(angle=45, hjust=1)) +
+  ggtitle("Most frequent 2-gram in news")
+
+```
+
+The following plot shows the top 10 most frequent 3-gram in this dataset.
+
+```{r 3gram_frequency}
+ggplot(most.freq(news.dtm.3g), aes(x=reorder(term, -count), y=count)) +
+  geom_bar(stat="identity") +
+  theme_bw() +
+  theme(axis.title.x = element_blank(),
+           axis.text.x  = element_text(angle=45, hjust=1)) +
+  ggtitle("Most frequent 3-gram in news")
+
+```
+
+
+### Strategies for Modeling and Prediction
+
+Currently, the exact methodology to produce a model for predictive typing has not been finalized. Nevertheless we anticipate to use some of the following strategies:
+
+* n-gram model: as described in [Task 3], a n-gram model will be built based on the n-gram analysis described above.
+* back-off model: for n-grams not observed in the training material, use back-off model to estimate the conditional probability of a given word.
+* auto-correction: use edit-distance based matrix to achieve text auto-correction.
+* online model: track and analyze user's input and selection to improve the model accuracy.
+
+Eventually, multiply predictive models will be constructed and combined in the application. The models will be ranked based on their accuracy and efficiency, and selectively dispatched in different context.
+
+With regard to the Shiny app, our plan is to create an interface to simulate the typing experience on a cellphone with word prediction powered by our model. The feasibility of implementation in Shiny however is not clear with my limited web development experience. For example, can Shiny capture keyword input or an on-screen keyboard is required? 
+
+
+### Github repository
+All the R/RMD codes and dataset for this Capstone project can be found on Github: https://github.com/lifan0127/Capstone-Project
