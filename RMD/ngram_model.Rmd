@@ -1,0 +1,153 @@
+---
+title: "N-Gram Language Model"
+author: "Fan Li"
+date: "Friday, November 28, 2014"
+output: html_document
+---
+
+In this decoment, we will implement a basic N-gram model based on:
+
+1. 
+2. NLTK
+
+```{r setup}
+library(tm)
+library(RWeka)
+library(microbenchmark)
+library(ggplot2)
+library(reshape2)
+library(RColorBrewer)
+library("doParallel")
+library("foreach")
+library("dplyr")
+
+f <- file("../../DSCapstoneProject_Data/Data/final/en_US/en_US.news.txt", "rb")
+en_us.news <- readLines(f, encoding="UTF-8")
+close(f)
+
+news <- en_us.news[sample(length(en_us.news), 10000)]
+
+```
+
+Use *foreach* package to divide corpus/dtm construction to multiple clusters; then use *do.call* to combine them together.
+
+```{r data_preprocessing}
+# Helper function to preprocess corpus
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+CorpusPreprocess <- function(corpus){
+  processed.corpus <- corpus %>%
+    tm_map(toSpace, "/|@|\\|") %>%
+    tm_map(content_transformer(tolower)) %>%
+    tm_map(removeNumbers) %>%
+    tm_map(removePunctuation) %>%
+    tm_map(stripWhitespace)
+  return(processed.corpus)
+}
+
+# Data preprocessing in parallel
+core <- 4
+cl <- makeCluster(core)
+registerDoParallel(cl)
+  
+news.list <- split(news, sample(rep(1:core, ceiling(length(news)/core))[1:length(news)]))
+
+result.list <- foreach(k = 1:core, .packages=c("dplyr", "tm", "RWeka")) %dopar% {
+        BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+        TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+        news.corpus <- VCorpus(VectorSource(news.list[[k]])) %>% CorpusPreprocess()
+        news.dtm <- DocumentTermMatrix(news.corpus, control=list(wordLengths=c(1,Inf)))
+        news.dtm.2g <- DocumentTermMatrix(news.corpus, control=list(tokenize = BigramTokenizer))
+        news.dtm.3g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TrigramTokenizer))
+        list(news.corpus, news.dtm, news.dtm.2g, news.dtm.3g)
+      }
+stopCluster(cl)
+
+# Merge corpus and dtm's (http://stackoverflow.com/a/20971354)
+news.corpus <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[1]]))
+news.dtm <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[2]]))
+news.dtm.2g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[3]]))
+news.dtm.3g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[4]]))
+  
+```
+
+
+
+```{r frequency_calculation}
+# Helper function to find the most frequent n words
+MostFreq <- function(dtm, n=NULL){
+  freq <- colSums(as.matrix(dtm))
+  result <- freq[order(freq, decreasing=TRUE)]
+  if(!is.null(n)){
+    result <- result[1:n]
+  }
+  return(result)
+}
+
+```
+
+
+```{r ngram_laplace_smoothing}
+dict.1gram <- news.dtm %>%
+  removeSparseTerms(0.999) %>%  # 3321 1-grams
+  MostFreq()
+
+dict.2gram <- news.dtm.2g %>%
+  removeSparseTerms(0.9995) %>%  # 7035 2-grams
+  MostFreq()
+
+dict.3gram <- news.dtm.3g %>%
+  removeSparseTerms(0.99975) %>%  # 4697 2-grams
+  MostFreq()
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
