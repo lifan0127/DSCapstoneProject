@@ -1,0 +1,157 @@
+---
+title: "tm Performance Optimization"
+author: "Fan Li"
+date: "Thursday, November 27, 2014"
+output: html_document
+---
+
+The tm package is the main work horse for this project. However its performance, especially on large dataset, is problematic and significantl inferior to NLTK in Python.^[\tiny http://bommaritollc.com/2011/02/pre-processing-text-rtm-vs-pythonnltk/]
+
+
+## Performance Evaluation
+
+### Build corpus
+
+```{r setup}
+library(tm)
+library(RWeka)
+library(microbenchmark)
+library(ggplot2)
+library(reshape2)
+library(RColorBrewer)
+library(dplyr)
+
+f <- file("../../DSCapstoneProject_Data/Data/final/en_US/en_US.news.txt", "rb")
+en_us.news <- readLines(f)
+close(f)
+
+```
+
+
+The *en_us.news* dataset contains `r length(en_us.news)` lines. Below are the test results showing time needed to convert and preprocess corpus from data of 10,000 to 1,000,000 lines.
+
+```{r speed_test}
+# Helper function to preprocess corpus
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+corpus.preprocess <- function(corpus){
+  processed.corpus <- corpus %>%
+    tm_map(toSpace, "/|@|\\|") %>%
+    tm_map(content_transformer(tolower)) %>%
+    tm_map(removeNumbers) %>%
+    tm_map(removePunctuation) %>%
+    tm_map(removeWords, stopwords("english")) %>%
+    tm_map(stripWhitespace)
+  return(processed.corpus)
+}
+
+
+time.record <- data.frame(data.size=0, corpus.time=0, dtm.time=0, dtm.2g.time=0, dtm.3g.time=0)
+
+for(i in seq(100000, 1000000, 100000)){
+  # Time for corpus construction
+  corpus <- microbenchmark(
+    news.corpus <- VCorpus(VectorSource(en_us.news[1:i])) %>% corpus.preprocess(),
+    times=1L, unit="s")
+  
+  # Time for dtm constructurtion
+  dtm <- microbenchmark(
+    news.dtm <- DocumentTermMatrix(news.corpus),
+    times=1L, unit="s")
+  
+  # Time for 2gram dtm
+  BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+  dtm.2g <- microbenchmark(
+    news.dtm.2g <- DocumentTermMatrix(news.corpus, control=list(tokenize = BigramTokenizer)),
+    times=1L, unit="s")
+  
+  # Time for 3gram dtm
+  TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+  dtm.3g <- microbenchmark(
+    news.dtm.3g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TrigramTokenizer)),
+    times=1L, unit="s")
+
+
+  time.record <- rbind(time.record,
+                         data.frame(data.size = i, 
+                                    corpus.time = corpus$time, 
+                                    dtm.time = dtm$time,
+                                    dtm.2g.time = dtm.2g$time,
+                                    dtm.3g.time = dtm.3g$time))
+}
+
+ggplot(melt(time.record, id="data.size", value.name="time.needed"), aes(x=data.size, y=time.needed, group=variable, color=variable)) +
+  geom_line(size=1) +
+  geom_point(size=4) +
+  theme_bw() + 
+  ggtitle("Impact of data size on computation time")
+
+```
+
+
+Paralellization using *foreach* package was tested for the corpus and dtm construction. Below are the results shwoing the impacts of CPU cores (threads) and data size (1,000 - 10,000). 
+
+```{r speed_test_foreach}
+library(doParallel)
+library(foreach)
+
+time.parallel <- data.frame(core=integer(), data.size=integer(), time=numeric())
+
+for(i in 1:8){
+  cl <- makeCluster(i)
+  registerDoParallel(cl)
+  for(j in seq(1000, 10000, 1000)){
+    
+      print(c(i, j))
+      test.result.parallel <- microbenchmark({
+        news.list <- split(en_us.news[1:j], sample(rep(1:i, ceiling(j/i))[1:j]))
+        
+        result.list <- foreach(k = 1:i, .packages=c("dplyr", "tm", "RWeka")) %dopar% {
+  
+          BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+          TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+          news.corpus <- VCorpus(VectorSource(news.list[[k]])) %>% corpus.preprocess()
+          news.dtm <- DocumentTermMatrix(news.corpus)
+          news.dtm.2g <- DocumentTermMatrix(news.corpus, control=list(tokenize = BigramTokenizer))
+          news.dtm.3g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TrigramTokenizer))
+          list(news.corpus, news.dtm, news.dtm.2g, news.dtm.3g)
+        }
+        
+        # Merge resulting dtm's
+        news.corpus.combined <- NULL
+        news.dtm.2g.combined <- NULL
+        news.dtm.3g.combined <- NULL
+        combined <- lapply(result.list, function(x){
+          news.corpus.combined <- c(news.corpus.combined, x[[1]])
+          news.dtm.2g.combined <- c(news.dtm.2g.combined, x[[2]])
+          news.dtm.3g.combined <- c(news.dtm.3g.combined, x[[3]])
+        })
+      }, times=1L)
+      time.parallel <- rbind(time.parallel, 
+                             data.frame(core=i, data.size=j, time=test.result.parallel$time))
+  }
+  stopCluster(cl)
+}
+
+ggplot(time.parallel, aes(x=data.size, y=time, group=factor(core), color=factor(core))) +
+  geom_line(size=1) +
+  geom_point(size=4) +
+  scale_color_brewer() +
+  theme_bw() + 
+  ggtitle("Impact of CPU (core/thread) and data size on parallelization")
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
