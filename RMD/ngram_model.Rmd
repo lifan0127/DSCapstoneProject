@@ -17,6 +17,7 @@ library(microbenchmark)
 library(ggplot2)
 library(reshape2)
 library(RColorBrewer)
+library("stringr")
 library("doParallel")
 library("foreach")
 library("dplyr")
@@ -45,20 +46,22 @@ CorpusPreprocess <- function(corpus){
 }
 
 # Data preprocessing in parallel
-core <- 4
+core <- 8
 cl <- makeCluster(core)
 registerDoParallel(cl)
   
 news.list <- split(news, sample(rep(1:core, ceiling(length(news)/core))[1:length(news)]))
 
-result.list <- foreach(k = 1:core, .packages=c("dplyr", "tm", "RWeka")) %dopar% {
+result.list <- foreach(k = 1:core*10, .packages=c("dplyr", "tm", "RWeka")) %dopar% {
         BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
         TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+        TetragramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 4, max = 4))
         news.corpus <- VCorpus(VectorSource(news.list[[k]])) %>% CorpusPreprocess()
         news.dtm <- DocumentTermMatrix(news.corpus, control=list(wordLengths=c(1,Inf)))
         news.dtm.2g <- DocumentTermMatrix(news.corpus, control=list(tokenize = BigramTokenizer))
         news.dtm.3g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TrigramTokenizer))
-        list(news.corpus, news.dtm, news.dtm.2g, news.dtm.3g)
+        news.dtm.4g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TetragramTokenizer))
+        list(news.corpus, news.dtm, news.dtm.2g, news.dtm.3g, news.dtm.4g)
       }
 stopCluster(cl)
 
@@ -67,6 +70,7 @@ news.corpus <- do.call(function(...) c(..., recursive = TRUE), lapply(result.lis
 news.dtm <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[2]]))
 news.dtm.2g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[3]]))
 news.dtm.3g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[4]]))
+news.dtm.4g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[5]]))
   
 ```
 
@@ -92,14 +96,60 @@ dict.1gram <- news.dtm %>%
   MostFreq()
 
 dict.2gram <- news.dtm.2g %>%
-  removeSparseTerms(0.9995) %>%  # 7035 2-grams
+  removeSparseTerms(0.999) %>%  # 7035 2-grams
   MostFreq()
 
 dict.3gram <- news.dtm.3g %>%
-  removeSparseTerms(0.99975) %>%  # 4697 2-grams
+  removeSparseTerms(0.99975) %>%  # 4697 3-grams
+  MostFreq()
+
+dict.4gram <- news.dtm.4g %>%
+  removeSparseTerms(0.9998) %>%  # 3043 4-grams
   MostFreq()
 
 
+
+
+WordChooser <- function(words, phrase, dict.grams=list(dict.1gram, dict.2gram, dict.3gram, dict.4gram)){
+  word.prob <- data_frame(words=tolower(words), gram.1=NA, gram.2=NA, gram.3=NA, gram.4=NA)
+  
+  phrase <- VCorpus(VectorSource(phrase)) %>% CorpusPreprocess()
+  phrase <- str_split(as.character(phrase[[1]]), " ")[[1]]
+  
+  if(length(phrase) > 3)
+    phrase <- phrase[(length(phrase)-2): length(phrase)]
+
+  
+  for(i in 1:length(words)){
+    word <- word.prob$words[i]
+    #print(word)
+    word.prob$gram.1[i] <- sum(dict.grams[[1]][word], 1, na.rm=TRUE)/sum(dict.grams[[1]])
+    for(j in 1:length(phrase)){
+      phrase.seg <- paste(phrase[(length(phrase)-j+1): length(phrase)], collapse=" ")
+      if(!phrase.seg %in% names(dict.grams[[j]])){
+        #print(paste(phrase.seg, "not in ngrams."))
+        next
+      }      
+      #print(dict.grams[[j+1]][paste(phrase.seg, word)])
+      word.prob[i, j+2] <- sum(dict.grams[[j+1]][paste(phrase.seg, word)], 1, na.rm=TRUE)/dict.grams[[j]][phrase.seg]
+      
+    }
+  }
+  return(word.prob)
+}
+
+
+phrase <- "The guy in front of me just bought a pound of bacon, a bouquet, and a case of"
+words <- c("cheese", "beer", "pretzels", "soda")
+
+phrase <- "You're the reason why I smile everyday. Can you follow me please? It would mean the"
+words <- c("most", "best", "universe", "world")
+
+phrase <- "Hey sunshine, can you follow me and make me the"
+words <- c("smelliest", "bluest", "happiest", "saddest")
+  
+WordChooser(words, phrase) %>%
+  arrange(-gram.4, -gram.3, -gram.2, -gram.1) 
 
 
 ```
