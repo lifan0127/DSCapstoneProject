@@ -1,0 +1,186 @@
+---
+title: "corpus_building"
+author: "Fan Li"
+date: "Thursday, December 11, 2014"
+output: html_document
+---
+
+## Progress
+
+Create n-gram frequency lists using divide-and-conquer (map-reduce) strategy.
+
+
+## Key learning
+
+1. 
+2. 
+3. 
+
+
+## Load packages and data
+```{r setup}
+library("slam")  # Sparse matrix
+library(microbenchmark)
+library(tm)
+library(RWeka)
+library(microbenchmark)
+library(ggplot2)
+library(reshape2)
+library(RColorBrewer)
+library("stringr")
+library("doParallel")
+library("foreach")
+library("dplyr")
+
+f <- file("../../DSCapstoneProject_Data/Data/final/en_US/en_US.news.txt", "rb")
+en_us.news <- readLines(f, encoding="UTF-8")
+close(f)
+
+# Subset the data for testing
+news <- en_us.news[sample(length(en_us.news), 1000000)]
+#news <- en_us.news[1:10000]  # Use the first 1000000 data for train/test
+```
+
+```{r helper_functions}
+# Helper function to preprocess corpus
+CorpusPreprocess <- function(corpus){
+  toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+  processed.corpus <- corpus %>%
+    tm_map(toSpace, "/|@|\\|()\"") %>%
+    #tm_map(content_transformer(tolower)) %>%
+    tm_map(removeNumbers) %>%
+    #tm_map(removePunctuation) %>%
+    tm_map(stripWhitespace)
+  return(processed.corpus)
+}
+
+
+# Helper function to find the most frequent n words
+MostFreq<- function(dtm, n=NULL){
+  # dtm: document term matrix
+  # n: if provided, will return the n most frequent words
+  # Use rollup calcuate the colSums: http://stackoverflow.com/a/21921618
+  freq <- rollup(dtm, 1, FUN=sum)  # Note the result is still a simple_triplet_matrix
+  
+  # Convert term frequency list into a 
+  result <- setNames(freq$v, freq$dimnames$Terms) 
+  result <- result[order(result, decreasing=TRUE)]
+  if(!is.null(n)){
+    result <- result[1:n]
+  }
+  return(result)
+}
+
+
+# Helper function to merge frequency lists
+MergeDict <- function(dict.1, dict.2){
+  shared <- names(dict.2) %in% names(dict.1)
+  merged <- dict.1
+  merged[names(dict.2)[shared]] <- merged[names(dict.2)[shared]] + dict.2[names(dict.2)[shared]]
+  merged <- c(merged, dict.2[names(dict.2)[!shared]])
+  return(merged)
+}
+
+```
+
+```{r data_processing}
+# Divide data for batch-processing
+batch <- 100
+news.list <- split(news, sample(rep(1:batch, ceiling(length(news)/batch))[1:length(news)]))
+
+for(i in 1:10){
+  # Data preprocessing in parallel
+  core <- 8 # for 4 cores 8 threds
+  cl <- makeCluster(core)
+  registerDoParallel(cl)
+  
+  news.item <- split(news.list[[i]], sample(rep(1:core, ceiling(length(news.list[[i]])/core))[1:length(news.list[[i]])]))
+  
+  result.list <- foreach(k = 1:core, .packages=c("dplyr", "tm", "RWeka")) %dopar% {
+        # Set up Weka Tokenizers
+        BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+        TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+        
+        # Prepare corpus
+        news.corpus <- VCorpus(VectorSource(news.item[[k]])) %>% CorpusPreprocess()
+        
+        # Tokenization
+        news.dtm.1g <- DocumentTermMatrix(news.corpus, control=list(wordLengths=c(1,Inf)))
+        news.dtm.2g <- DocumentTermMatrix(news.corpus, control=list(tokenize = BigramTokenizer))
+        news.dtm.3g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TrigramTokenizer))
+        
+        return(list(news.dtm.1g, news.dtm.2g, news.dtm.3g))
+      }
+  stopCluster(cl)
+   
+  assign(paste0("dict.1gram.", i), do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[1]])) %>% MostFreq()) 
+  assign(paste0("dict.2gram.", i), do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[2]])) %>% MostFreq())
+  assign(paste0("dict.3gram.", i), do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[3]])) %>% MostFreq())
+  #browser()
+  do.call(save, list(paste0("dict.1gram.", i), file=paste0("../Output/Batch/1gram", i, ".RData")))
+  do.call(save, list(paste0("dict.2gram.", i), file=paste0("../Output/Batch/2gram", i, ".RData")))
+  do.call(save, list(paste0("dict.3gram.", i), file=paste0("../Output/Batch/3gram", i, ".RData")))
+  rm(list=c(paste0("dict.1gram.", i),
+            paste0("dict.2gram.", i),
+            paste0("dict.3gram.", i)))
+}
+
+```
+
+```{r data_merge}
+load("../Output/Batch/1gram1.RData")
+load("../Output/Batch/2gram1.RData")
+load("../Output/Batch/3gram1.RData")
+merged.1gram <- dict.1gram.1
+merged.2gram <- dict.2gram.1
+merged.3gram <- dict.3gram.1
+rm(list=c("dict.1gram.1", "dict.2gram.1", "dict.3gram.1"))
+unique.terms <- data.frame(batch=1, 
+                           gram1=length(merged.1gram), 
+                           gram2=length(merged.2gram), 
+                           gram3=length(merged.3gram), 
+                           time=0)
+
+for(i in 2:batch){
+  time <- microbenchmark({
+      load(paste0("../Output/Batch/1gram", i, ".RData"))
+      load(paste0("../Output/Batch/2gram", i, ".RData"))
+      load(paste0("../Output/Batch/3gram", i, ".RData"))
+      merged.1gram <- MergeDict(merged.1gram, get(paste0("dict.1gram.", i)))
+      merged.2gram <- MergeDict(merged.2gram, get(paste0("dict.2gram.", i)))
+      merged.3gram <- MergeDict(merged.3gram, get(paste0("dict.3gram.", i)))
+      rm(list=c(paste0("dict.1gram.", i), paste0("dict.2gram.", i), paste0("dict.3gram.", i)))},
+    times=1L, unit="s")
+
+  unique.terms <- rbind(unique.terms,
+                        data.frame(batch=i, 
+                                   gram1=length(merged.1gram), 
+                                   gram2=length(merged.2gram), 
+                                   gram3=length(merged.3gram),
+                                   time=time$time))
+}
+
+ggplot(melt(unique.terms[, 1:4], id="batch", variable.name="ngram.type", value.name="count"), aes(x=batch, y=count, group=ngram.type, color=ngram.type)) +
+  geom_line(size=1.5) +
+  geom_point(size=4)
+
+ggplot(unique.terms[, c(1,5)], aes(x=batch, y=time)) + 
+  geom_point(size=4) +
+  geom_smooth(method="loess", size=1.5)
+  
+
+save(merged.1gram, file="../Output/1gram.RData")
+save(merged.2gram, file="../Output/2gram.RData")
+save(merged.3gram, file="../Output/3gram.RData")
+
+```
+
+
+
+
+
+
+
+
+
+

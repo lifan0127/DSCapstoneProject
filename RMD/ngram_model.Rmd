@@ -5,12 +5,21 @@ date: "Friday, November 28, 2014"
 output: html_document
 ---
 
-In this decoment, we will implement a basic N-gram model based on:
+## Objective
 
-1. 
-2. NLTK
+Implement a basic n-gram model using a small subset of us news data.
 
+
+## Key learning
+
+1. Basic n-gram model with Laplace smooth is easy to implement
+2. Multi-core can speed the computation 
+3. Still need to further divide the data due to memory limit
+
+
+## Load packages and data
 ```{r setup}
+library("slam")  # Sparse matrix
 library(tm)
 library(RWeka)
 library(microbenchmark)
@@ -26,9 +35,14 @@ f <- file("../../DSCapstoneProject_Data/Data/final/en_US/en_US.news.txt", "rb")
 en_us.news <- readLines(f, encoding="UTF-8")
 close(f)
 
+# Subset the data for testing
 news <- en_us.news[sample(length(en_us.news), 10000)]
-
+#news <- en_us.news[1:10000]  # Use the first 1000000 data for train/test
 ```
+
+
+
+## Construct corpus
 
 Use *foreach* package to divide corpus/dtm construction to multiple clusters; then use *do.call* to combine them together.
 
@@ -37,48 +51,62 @@ Use *foreach* package to divide corpus/dtm construction to multiple clusters; th
 toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
 CorpusPreprocess <- function(corpus){
   processed.corpus <- corpus %>%
-    tm_map(toSpace, "/|@|\\|") %>%
-    tm_map(content_transformer(tolower)) %>%
+    tm_map(toSpace, "/|@|\\|()\"") %>%
+    #tm_map(content_transformer(tolower)) %>%
     tm_map(removeNumbers) %>%
-    tm_map(removePunctuation) %>%
+    #tm_map(removePunctuation) %>%
     tm_map(stripWhitespace)
   return(processed.corpus)
 }
 
 # Data preprocessing in parallel
-core <- 8
+core <- 8 # for 4 cores 8 threds
 cl <- makeCluster(core)
 registerDoParallel(cl)
-  
+
+
 news.list <- split(news, sample(rep(1:core, ceiling(length(news)/core))[1:length(news)]))
 
-result.list <- foreach(k = 1:core*10, .packages=c("dplyr", "tm", "RWeka")) %dopar% {
+result.list <- foreach(k = 1:core, .packages=c("dplyr", "tm", "RWeka")) %dopar% {
+        # Set up Weka Tokenizers
         BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
         TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
-        TetragramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 4, max = 4))
+        
+        # Prepare corpus
         news.corpus <- VCorpus(VectorSource(news.list[[k]])) %>% CorpusPreprocess()
-        news.dtm <- DocumentTermMatrix(news.corpus, control=list(wordLengths=c(1,Inf)))
+        
+        # Tokenization
+        news.dtm.1g <- DocumentTermMatrix(news.corpus, control=list(wordLengths=c(1,Inf)))
         news.dtm.2g <- DocumentTermMatrix(news.corpus, control=list(tokenize = BigramTokenizer))
         news.dtm.3g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TrigramTokenizer))
-        news.dtm.4g <- DocumentTermMatrix(news.corpus, control=list(tokenize = TetragramTokenizer))
-        list(news.corpus, news.dtm, news.dtm.2g, news.dtm.3g, news.dtm.4g)
+        
+        return(list(news.corpus, news.dtm.1g, news.dtm.2g, news.dtm.3g))
       }
+  
+
 stopCluster(cl)
 
 # Merge corpus and dtm's (http://stackoverflow.com/a/20971354)
 news.corpus <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[1]]))
-news.dtm <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[2]]))
+news.dtm.1g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[2]]))
 news.dtm.2g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[3]]))
 news.dtm.3g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[4]]))
-news.dtm.4g <- do.call(function(...) c(..., recursive = TRUE), lapply(result.list, function(x) x[[5]]))
+
+save(news.corpus, news.dtm.1g, news.dtm.2g, news.dtm.3g, file="../Output/corpus.RData")
   
 ```
 
 
 
+## Word count
+
+
 ```{r frequency_calculation}
 # Helper function to find the most frequent n words
-MostFreq <- function(dtm, n=NULL){
+MostFreq.1<- function(dtm, n=NULL){
+  # dtm: document term matrix
+  # n: if provided, will return the n most frequent words
+  #freq <- colSums(Matrix(dtm, nrow=nrow(dtm), ncol=ncol(dtm), sparse=TRUE))  # Use the Matrix package for more efficient storage, however 
   freq <- colSums(as.matrix(dtm))
   result <- freq[order(freq, decreasing=TRUE)]
   if(!is.null(n)){
@@ -87,39 +115,54 @@ MostFreq <- function(dtm, n=NULL){
   return(result)
 }
 
+MostFreq<- function(dtm, n=NULL){
+  # dtm: document term matrix
+  # n: if provided, will return the n most frequent words
+  # Use rollup calcuate the colSums: http://stackoverflow.com/a/21921618
+  freq <- rollup(dtm, 1, FUN=sum)  # Note the result is still a simple_triplet_matrix
+  
+  # Convert term frequency list into a 
+  result <- setNames(freq$v, freq$dimnames$Terms) 
+  result <- result[order(result, decreasing=TRUE)]
+  if(!is.null(n)){
+    result <- result[1:n]
+  }
+  return(result)
+}
+
+
 ```
 
+I was going to use Matrix package for more efficient story for sparse matrix. But tm already use the simple_triplet_matrix from slam package underneath.
+
+
+
+## Build ngram model
 
 ```{r ngram_laplace_smoothing}
-dict.1gram <- news.dtm %>%
-  removeSparseTerms(0.999) %>%  # 3321 1-grams
-  MostFreq()
+dict.1gram <- news.dtm.1g %>%
+  #removeSparseTerms(0.999) %>%  
+  MostFreq()  # 189010 terms
 
 dict.2gram <- news.dtm.2g %>%
-  removeSparseTerms(0.999) %>%  # 7035 2-grams
-  MostFreq()
+  #removeSparseTerms(0.999) %>%  
+  MostFreq()  # 1153335 2gram
 
 dict.3gram <- news.dtm.3g %>%
-  removeSparseTerms(0.99975) %>%  # 4697 3-grams
-  MostFreq()
-
-dict.4gram <- news.dtm.4g %>%
-  removeSparseTerms(0.9998) %>%  # 3043 4-grams
-  MostFreq()
+  #removeSparseTerms(0.99975) %>% 
+  MostFreq()  # 2405615 3gram
 
 
-
-
-WordChooser <- function(words, phrase, dict.grams=list(dict.1gram, dict.2gram, dict.3gram, dict.4gram)){
-  word.prob <- data_frame(words=tolower(words), gram.1=NA, gram.2=NA, gram.3=NA, gram.4=NA)
+WordChooser <- function(words, phrase, dict.grams=list(dict.1gram, dict.2gram, dict.3gram)){
+  word.prob <- data_frame(words=tolower(words), gram.1=NA, gram.2=NA, gram.3=NA)
   
   phrase <- VCorpus(VectorSource(phrase)) %>% CorpusPreprocess()
   phrase <- str_split(as.character(phrase[[1]]), " ")[[1]]
   
-  if(length(phrase) > 3)
-    phrase <- phrase[(length(phrase)-2): length(phrase)]
+  if(length(phrase) > 2)
+    phrase <- phrase[(length(phrase)-1): length(phrase)]
 
-  
+  print(phrase)
   for(i in 1:length(words)){
     word <- word.prob$words[i]
     #print(word)
@@ -142,16 +185,20 @@ WordChooser <- function(words, phrase, dict.grams=list(dict.1gram, dict.2gram, d
 phrase <- "The guy in front of me just bought a pound of bacon, a bouquet, and a case of"
 words <- c("cheese", "beer", "pretzels", "soda")
 
+WordChooser(words, phrase) %>%
+  arrange(-gram.3, -gram.2, -gram.1) 
+
 phrase <- "You're the reason why I smile everyday. Can you follow me please? It would mean the"
 words <- c("most", "best", "universe", "world")
 
+WordChooser(words, phrase) %>%
+  arrange(-gram.3, -gram.2, -gram.1) 
+
 phrase <- "Hey sunshine, can you follow me and make me the"
 words <- c("smelliest", "bluest", "happiest", "saddest")
-  
+
 WordChooser(words, phrase) %>%
-  arrange(-gram.4, -gram.3, -gram.2, -gram.1) 
-
-
+  arrange(-gram.3, -gram.2, -gram.1) 
 ```
 
 

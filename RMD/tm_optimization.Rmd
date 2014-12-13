@@ -34,7 +34,7 @@ The *en_us.news* dataset contains `r length(en_us.news)` lines. Below are the te
 # Helper function to preprocess corpus
 toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
 corpus.preprocess <- function(corpus){
-  processed.corpus <- corpus %>%
+  processed.corpus <- corpus %>% 
     tm_map(toSpace, "/|@|\\|") %>%
     tm_map(content_transformer(tolower)) %>%
     tm_map(removeNumbers) %>%
