@@ -1,0 +1,18 @@
+{
+    "contents" : "---\ntitle: \"N-Gram Language Model 2\"\nauthor: \"Fan Li\"\ndate: \"Friday, December 12, 2014\"\noutput: html_document\n---\n\n## Objective\n\nUse the full term\n\n\n## Key learning\n\n1. Basic n-gram model with Laplace smooth is easy to implement\n2. Multi-core can speed the computation \n3. Still need to further divide the data due to memory limit\n\n\n```{r}\nsummary(cars)\n```\n\nYou can also embed plots, for example:\n\n```{r, echo=FALSE}\nplot(cars)\n```\n\nNote that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.\n",
+    "created" : 1418443843976.000,
+    "dirty" : true,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "33408173",
+    "id" : "9222DB7B",
+    "lastKnownWriteTime" : 31244173393002613,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "type" : "r_markdown"
+}

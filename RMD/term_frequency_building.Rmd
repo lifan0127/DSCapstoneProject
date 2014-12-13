@@ -1,5 +1,5 @@
 ---
-title: "corpus_building"
+title: "term_frequency_building"
 author: "Fan Li"
 date: "Thursday, December 11, 2014"
 output: html_document
