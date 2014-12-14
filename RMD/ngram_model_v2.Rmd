@@ -157,54 +157,80 @@ setkey(dt.2gram, key)
 
 merged.1gram <- merged.1gram[str_detect(names(merged.1gram), "^[A-z]+$")] 
 merged.1gram <- sort(merged.1gram, decreasing=TRUE)[1:100]
-dt.1gram <- data.table(data.frame(key=names(merged.1gram), word=names(merged.1gram), count=merged.1gram))
+dt.1gram <- data.table(data_frame(key=names(merged.1gram), word=names(merged.1gram), count=merged.1gram))
 setkey(dt.1gram, key)
 
 save(dt.1gram, dt.2gram, dt.3gram, file="../Output/gram_dt.RData")
-
+#save(dt.1gram, dt.2gram, dt.3gram, file="data/gram_dt.RData")
 ```
 
 
 ```{r prediction}
-phrase <- "The guy in front of me just bought a pound of bacon, a bouquet, and a case of beer."
-
-phrase.tr <- as.character((VCorpus(VectorSource(phrase)) %>% CorpusPreprocess())[[1]])
-
-words <- strsplit(phrase.tr, " ")[[1]] %>%
-  str_replace_all("[,|.|?|!]", "")
-
-prediction <- data.frame(ind=1:length(words), word=words[1:length(words)], predict.1=NA, predict.2=NA, predict.3=NA, predict.4=NA, predict.5=NA, score=NA)
-
-for(i in 3:length(words)){
-  #print(i)
-  pred.3gram <- dt.3gram[key==paste(words[i-2], words[i-1])]
+# Helper function to generate prediction result
+Predict.Word <- function(word.1, word.2){
+  pred.3gram <- dt.3gram[key==paste(word.1, word.2)]
   
   if(nrow(pred.3gram) < 5){
-    pred.2gram <- dt.2gram[key==words[i-1]]
+    pred.2gram <- dt.2gram[key==word.2]
     if((length(unique(c(pred.3gram$word, pred.2gram$word)))) < 5){
       result <- c(pred.3gram$word, 
-                  pred.2gram$word[!pred.2gram$word %in% pred.3gram$word][1:(5-nrow(pred.3gram))], 
-                  dt.1gram$word[!pred.1gram$word %in% pred.3gram$word & !pred.1gram$word %in% pred.2gram$word][1:(5-length(unique(c(pred.3gram$word, pred.2gram$word))))])
+                  pred.2gram$word[!pred.2gram$word %in% pred.3gram$word], 
+                  dt.1gram$word[!dt.1gram$word %in% pred.3gram$word & !dt.1gram$word %in% pred.2gram$word][1:(5-length(unique(c(pred.3gram$word, pred.2gram$word))))])
     }else{
       result <- c(pred.3gram$word, pred.2gram$word[!pred.2gram$word %in% pred.3gram$word][1:(5-nrow(pred.3gram))])
     }
   }else{
     result <- pred.3gram$word[1:5]
   }
-  prediction[i, 3:7] <- result
-  if(words[i] %in% result){
-    prediction[i, 8] <- 6-which(result==words[i]) 
-  }else{
-    prediction[i, 8] <- 0
+  return(result)
+}
+
+# Helper function to continuously predict a whole phrase
+Predict.Phrase <- function(phrase){
+  phrase.tr <- as.character((VCorpus(VectorSource(phrase)) %>% CorpusPreprocess())[[1]])
+  words <- strsplit(phrase.tr, " ")[[1]] %>%
+    str_replace_all("[,|.|?|!]", "")
+  prediction <- data_frame(ind=1:length(words), word=words[1:length(words)], predict.1=NA, predict.2=NA, predict.3=NA, predict.4=NA, predict.5=NA, score=NA)
+
+  for(i in 3:length(words)){
+    #print(i)
+    result <- Predict.Word(words[i-2], words[i-1])
+    prediction[i, 3:7] <- result
+    if(words[i] %in% result){
+      prediction[i, 8] <- 6-which(result==words[i]) 
+    }else{
+      prediction[i, 8] <- 0
+    }
   }
+  return(prediction)
 }
 
 
+Predict.Phrase("The guy in front of me just bought a pound of bacon, a bouquet, and a case of beer.")
+
+Predict.Phrase("You're the reason why I smile everyday. Can you follow me please? It would mean the world.")
+
+Predict.Phrase("Hey sunshine, can you follow me and make me the happiest.")
 
 ```
 
 
+```{r sample_news}
+f <- file("../../DSCapstoneProject_Data/Data/final/en_US/en_US.news.txt", "rb")
+en_us.news <- readLines(f, encoding="UTF-8")
+close(f)
 
+set.seed(123)
+sample.news <- en_us.news[sample(length(en_us.news), 500)]
+sample.news <- str_replace_all(sample.news, "\\\"", "")  # Remove "\"" in some text
+sample.news <- str_replace_all(sample.news, "^([^.|?|!]+[.|?|!])[^\n]*", "\\1")  # Keep the first sentence only
+sample.news <- sample.news[!str_detect(sample.news, "\\d")]
+sample.news <- sample.news[nchar(sample.news)>100 & nchar(sample.news)<150]
+
+save(sample.news, file="sample_news.RData")
+
+
+```
 
 
 
