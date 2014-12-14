@@ -1,0 +1,18 @@
+{
+    "contents" : "shinyUI(fluidPage(theme = \"bootstrap.css\",\n                  \n                  headerPanel(\"New Application\"),\n                  \n                  sidebarPanel(\n                    sliderInput(\"obs\", \"Number of observations:\", \n                                min = 1, max = 1000, value = 500)\n                  ),\n                  \n                  mainPanel(plotOutput(\"distPlot\"))\n))",
+    "created" : 1418528030058.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "2676566638",
+    "id" : "333BCBA7",
+    "lastKnownWriteTime" : 1418529323,
+    "path" : "~/GitHub/DSCapstoneProject/App/ui.R",
+    "project_path" : "App/ui.R",
+    "properties" : {
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 6,
+    "source_on_save" : false,
+    "type" : "r_source"
+}
