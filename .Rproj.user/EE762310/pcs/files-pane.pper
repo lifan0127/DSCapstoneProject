@@ -2,7 +2,7 @@
     "path" : "~/GitHub/DSCapstoneProject/RMD",
     "sortOrder" : [
         {
-            "ascending" : true,
+            "ascending" : false,
             "columnIndex" : 2
         }
     ]

@@ -1,0 +1,18 @@
+{
+    "contents" : "---\ntitle: \"Data Science Capstone: Text Prediction\"\ndate: \"Sunday, December 14, 2014\"\noutput: ioslides_presentation\n---\n\n## Introduction\n\nIntroduce a new text prediction application based on \"big data\" text analytics and machine learning technologies. https://lifan.shinyapps.io/TextPredictApp/\n\n![UI Overview](overview.jpg)\n \n\n## User Interface and Functionalities\n\n![UI Details](ui.jpg)\n\n\n## Data and Algorithm\n\n#### Data\n\nFor this work, we used the US news article data set (\"en_US.news.txt\") which contains over 1 million news items and approximate 50 million words.\n\n#### Algorithm\n\nThe text prediction was supported by a n-gram language model. More specifically it combines a 3-gram, a 2-gram and a unigram model with decreasing priority in a prediction process. As an example, it will first invoke the 3gram model with two previous words as key, and then the 2-gram model with one previous word, and finally the unigram model. Then, it will return the 5 most probably words to user.\n\n#### Source code\n\nThis project is 100% open-source. All the source codes are available on [GitHub](https://github.com/lifan0127/DSCapstoneProject).\n\n\n\n## Summary & Path forward\n\n* We developed a text prediction model that has great potential for next-generation assistive typing applications on Mobile devices. \n* For demonstration, we built a web-based application that support text prediction evaluation and model visualization.\n* There are ample opportunities for improvement of the statistical model and development of end-use applications.\n* We are currently seeking a partnership that can provide fund to support 3 month full-time development and a dedicated server to launch a public preview version of the application.\n* Thank you!\n\n",
+    "created" : 1418574347071.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "146563322",
+    "id" : "A4D090F",
+    "lastKnownWriteTime" : 1418582677,
+    "path" : "~/GitHub/DSCapstoneProject/RMD/text_predict_slide_deck.Rmd",
+    "project_path" : "RMD/text_predict_slide_deck.Rmd",
+    "properties" : {
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "type" : "r_markdown"
+}

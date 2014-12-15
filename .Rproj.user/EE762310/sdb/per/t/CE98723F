@@ -1,0 +1,17 @@
+{
+    "contents" : "library(\"ggvis\")\n\nshinyUI(fluidPage(\n  theme = \"bootstrap.css\",\n  verticalLayout(\n    titlePanel(\"Data Science Capstone: Text Prediction\"),\n    #h4(\"Introduction\"),\n    HTML(\"<p>This Shiny App was built to fulfill the requirement for Coursera Data Science Specialization. It provides a basic text prediction capability (\\\"assistive typing\\\") that is supported by a n-gram language model. The source code of this project can be found on <a href='https://github.com/lifan0127/DSCapstoneProject'>GitHub</a>.</p>\"),\n    h4(\"Single Prediction Mode\"),\n    textInput(\"entry1\", \"Please enter at least two words\", \"\"),\n    actionButton(\"submitButton1\", \"Predict the Next Word\"),\n    #textOutput(\"singlePredict\"),\n    verbatimTextOutput(\"singlePredict\"),\n    h4(\"Continuous Prediction Mode\"),\n    p(\"This mode will take a whole sentence, consecutively predict all the words, and visualize the performance in the following plot. You can type in a sentence or randomly choose one from the database.\"),\n    textInput(\"entry2\", \"\", \"The guy in front of me just bought a pound of bacon, a bouquet, and a case of beer.\"),\n    \n    actionButton(\"submitButton3\", \"Random Sentence\"),\n    actionButton(\"submitButton2\", \"Evaluate Prediction\"),\n    HTML(\"<p>Each time the model will produce 5 choices with decreasing probabilities. <br/>Score criteria: 5 = correct word is the first choice; 4 = second choice ... 0 = missed. (Hence, higher score means better prediction.)</p>\"),\n    ggvisOutput(\"plot\"),\n    HTML(\"<foot>Background image @ 2014 Ozlem San (License: BY-NC-SA 2.0)</foot>\")\n  )\n))\n\n",
+    "created" : 1418575230560.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "3356454864",
+    "id" : "CE98723F",
+    "lastKnownWriteTime" : 1418575716,
+    "path" : "~/GitHub/DSCapstoneProject/TextPredictApp/ui.R",
+    "project_path" : "TextPredictApp/ui.R",
+    "properties" : {
+    },
+    "relative_order" : 6,
+    "source_on_save" : false,
+    "type" : "r_source"
+}
